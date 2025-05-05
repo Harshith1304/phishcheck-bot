@@ -103,14 +103,12 @@ def webhook():
     application.update_queue.put_nowait(update)
     return "OK"
 
-@app.before_first_request
-def init_webhook():
-    webhook_url = "https://phishcheck-bot-1.onrender.com/"
-    application.bot.set_webhook(webhook_url)
-
+# Register Telegram handlers
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 if __name__ == "__main__":
+    # Set webhook manually before starting Flask server
+    application.bot.set_webhook("https://phishcheck-bot-1.onrender.com/")
     app.run(host="0.0.0.0", port=10000)
