@@ -17,8 +17,10 @@ MANUAL_PHISHING_URLS = [
     "https://lt.ke/Students-FREE-LAPT0PS"
 ]
 
+# Logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
+# Initialize Flask and Telegram app
 app = Flask(__name__)
 application = Application.builder().token(BOT_TOKEN).build()
 
@@ -96,7 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Please send a valid URL.")
 
-# --- Flask Webhook Route ---
+# --- Flask Webhook Routes ---
 
 @app.route("/", methods=["POST"])
 def webhook():
@@ -104,20 +106,22 @@ def webhook():
     application.update_queue.put_nowait(update)
     return "OK"
 
-# Optional: health check route to avoid 405 from HEAD/GET
 @app.route("/", methods=["GET", "HEAD"])
 def health_check():
-    return "Bot is running.", 200
+    return "Bot is alive", 200
 
-# --- Run Everything ---
+# --- Register Telegram Handlers ---
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+# --- Main Entrypoint ---
+
 if __name__ == "__main__":
     async def main():
         await application.initialize()
+        await application.start()
         await application.bot.set_webhook("https://phishcheck-bot-1.onrender.com/")
         app.run(host="0.0.0.0", port=10000)
 
