@@ -56,8 +56,16 @@ def check_virustotal(url):
 
 def is_suspicious_pattern(url):
     phishing_keywords = ["login", "secure", "verify", "paypal", "user-auth", "account", "webscr"]
-    return any(keyword in url.lower() for keyword in phishing_keywords)
+    manual_phishing_sites = [
+        "lt.ke/Students-FREE-LAPT0PS",
+        # Add more known phishing URLs or domains here
+    ]
+    
+    for site in manual_phishing_sites:
+        if site.lower() in url.lower():
+            return True
 
+    return any(keyword in url.lower() for keyword in phishing_keywords)
 # Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Send me a URL and I’ll check if it's phishing or dangerous.")
