@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import requests
 import logging
 import json
+import asyncio
 
 # Your API Keys
 BOT_TOKEN = "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY"
@@ -95,7 +96,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Please send a valid URL.")
 
-# --- Flask Webhook ---
+# --- Flask Webhook Route ---
 
 @app.route("/", methods=["POST"])
 def webhook():
@@ -103,12 +104,21 @@ def webhook():
     application.update_queue.put_nowait(update)
     return "OK"
 
-# Register Telegram handlers
+# Optional: health check route to avoid 405 from HEAD/GET
+@app.route("/", methods=["GET", "HEAD"])
+def health_check():
+    return "Bot is running.", 200
+
+# --- Run Everything ---
+
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 if __name__ == "__main__":
-    # Set webhook manually before starting Flask server
-    application.bot.set_webhook("https://phishcheck-bot-1.onrender.com/")
-    app.run(host="0.0.0.0", port=10000)
+    async def main():
+        await application.initialize()
+        await application.bot.set_webhook("https://phishcheck-bot-1.onrender.com/")
+        app.run(host="0.0.0.0", port=10000)
+
+    asyncio.run(main())
