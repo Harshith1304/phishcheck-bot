@@ -1,38 +1,59 @@
-import os
-import requests
 from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters
-)
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import requests
+import logging
+import json
 
-# --- ENVIRONMENT VARIABLES ---
-TOKEN = "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY"
-GKEY = "AIzaSyBNAp4clDaP7ZJWBpPU1KNozkb5d3yzm38"
-VT_API_KEY = "7e3ef9c9df1bbdfbfe943f35547602a96f3df7fe6f270abe947ec5570934f90c"
+# Your API Keys
+BOT_TOKEN = "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY"
+APIVOID_API_KEY = "d0c5a77b7f18d04f28ff8d2643c358aa"
+GKEY = "AIzaSyD1-fk6M41nVn4r8e-rZLgD47N7f_nMJl0"
+VT_API_KEY = "7f6f2bf4c8b45686efba59eab4b5cfa51e6b60b1780f52b94ae4efbd3f633221"
 
-# --- MANUAL PHISHING SITES LIST ---
-manual_phishing_sites = [
+# Hardcoded phishing URLs
+MANUAL_PHISHING_URLS = [
     "https://lt.ke/Students-FREE-LAPT0PS"
 ]
 
-# --- FLASK APP ---
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
 app = Flask(__name__)
+application = Application.builder().token(BOT_TOKEN).build()
 
-# --- HELPER FUNCTIONS ---
+# --- Phishing Detection Functions ---
 
-def check_google_safebrowsing(url: str) -> str | None:
-    endpoint = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+def check_apivoid(url):
+    endpoint = "https://endpoint.apivoid.com/urlrep/v1/pay-as-you-go/"
+    params = {"key": APIVOID_API_KEY, "url": url}
+    try:
+        response = requests.get(endpoint, params=params)
+        data = response.json()
+        score = data.get("data", {}).get("report", {}).get("risk_score", -1)
+        if score >= 50:
+            return f"[APIVoid] ⚠️ Suspicious URL! Risk Score: {score}"
+        return f"[APIVoid] ✅ Looks safe. Risk Score: {score}"
+    except:
+        return "[APIVoid] ❌ Error checking."
+
+def check_virustotal(url):
+    vt_url = "https://www.virustotal.com/api/v3/urls"
+    try:
+        res = requests.post(vt_url, headers={"x-apikey": VT_API_KEY}, data={"url": url})
+        scan_id = res.json()["data"]["id"]
+        report_url = f"https://www.virustotal.com/api/v3/analyses/{scan_id}"
+        report = requests.get(report_url, headers={"x-apikey": VT_API_KEY}).json()
+        stats = report.get("data", {}).get("attributes", {}).get("stats", {})
+        if stats.get("malicious", 0) > 0:
+            return f"[VirusTotal] ⚠️ Malicious by {stats['malicious']} engines."
+        return "[VirusTotal] ✅ Clean."
+    except:
+        return "[VirusTotal] ❌ Error checking."
+
+def check_google_safebrowsing(url):
+    endpoint = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GKEY}"
     payload = {
-        "client": {
-            "clientId": "phishcheck-bot",
-            "clientVersion": "1.0"
-        },
+        "client": {"clientId": "phishbot", "clientVersion": "1.0"},
         "threatInfo": {
             "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING"],
             "platformTypes": ["ANY_PLATFORM"],
@@ -40,100 +61,56 @@ def check_google_safebrowsing(url: str) -> str | None:
             "threatEntries": [{"url": url}]
         }
     }
-    params = {"key": GKEY}
-    res = requests.post(endpoint, params=params, json=payload)
-    if res.status_code == 200 and res.json().get("matches"):
-        return "Phishing or Malware detected by Google Safe Browsing."
-    return None
+    try:
+        res = requests.post(endpoint, json=payload)
+        if res.json().get("matches"):
+            return "[Google Safe Browsing] ⚠️ Threat detected!"
+        return "[Google Safe Browsing] ✅ Clean."
+    except:
+        return "[Google Safe Browsing] ❌ Error checking."
 
-def check_virustotal(url: str) -> str | None:
-    headers = {"x-apikey": VT_API_KEY}
-    scan_url = requests.post("https://www.virustotal.com/api/v3/urls", data={"url": url}, headers=headers)
-    if scan_url.status_code == 200:
-        result_id = scan_url.json()["data"]["id"]
-        analysis = requests.get(f"https://www.virustotal.com/api/v3/analyses/{result_id}", headers=headers)
-        if analysis.status_code == 200:
-            stats = analysis.json()["data"]["attributes"]["stats"]
-            malicious = stats.get("malicious", 0)
-            suspicious = stats.get("suspicious", 0)
-            if malicious > 0 or suspicious > 0:
-                return f"âš ï¸ Detected as suspicious by VirusTotal ({malicious} malicious, {suspicious} suspicious)."
-    return None
+def run_checks(url):
+    if url in MANUAL_PHISHING_URLS:
+        return "[Manual] ⚠️ This URL is manually flagged as phishing."
+    results = [
+        check_apivoid(url),
+        check_virustotal(url),
+        check_google_safebrowsing(url)
+    ]
+    return "\n".join(results)
 
-def is_suspicious_pattern(url: str) -> bool:
-    phishing_keywords = ["login", "secure", "verify", "paypal", "user-auth", "account", "webscr"]
-    return any(keyword in url.lower() for keyword in phishing_keywords)
-
-def is_manually_flagged(url: str) -> bool:
-    return url.strip().lower() in (site.lower() for site in manual_phishing_sites)
-
-# --- HANDLERS ---
+# --- Telegram Handlers ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Send me a URL and Iâ€™ll check if it's phishing or dangerous.")
+    await update.message.reply_text("Welcome! Send a link and I’ll scan it.")
 
-async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
-    response_msgs = []
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Just send a link and I’ll check if it’s safe!")
 
-    if not (url.startswith("http://") or url.startswith("https://")):
-        await update.message.reply_text("Please send a valid URL starting with http or https.")
-        return
-
-    if is_manually_flagged(url):
-        response_msgs.append("âŒ Manually flagged as phishing.")
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if "http" in text or "www" in text:
+        result = run_checks(text)
+        await update.message.reply_text(result)
     else:
-        gsb_result = check_google_safebrowsing(url)
-        if gsb_result:
-            response_msgs.append("âŒ " + gsb_result)
+        await update.message.reply_text("Please send a valid URL.")
 
-        vt_result = check_virustotal(url)
-        if vt_result:
-            response_msgs.append(vt_result)
+# --- Flask Webhook ---
 
-        if is_suspicious_pattern(url):
-            response_msgs.append("âš ï¸ URL contains suspicious patterns.")
+@app.route("/", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "OK"
 
-    if not response_msgs:
-        response_msgs.append("âœ… Safe: No threats detected.")
+@app.before_first_request
+def init_webhook():
+    webhook_url = "https://phishcheck-bot-1.onrender.com/"
+    application.bot.set_webhook(webhook_url)
 
-    buttons = [
-        [InlineKeyboardButton("Recheck", callback_data=url)],
-        [InlineKeyboardButton("Bot Info", callback_data="info")],
-        [InlineKeyboardButton("Report False Result", url="https://safebrowsing.google.com/safebrowsing/report_phish/")]
-    ]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text(" ".join(response_msgs), reply_markup=reply_markup)
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    await query.answer()
-    if data.startswith("http"):
-        fake_update = Update(update.update_id, message=query.message)
-        fake_update.message.text = data
-        await check_url(fake_update, context)
-    elif data == "info":
-        await query.edit_message_text("PhishCheck Bot - Version 2.0
-Now powered by Google Safe Browsing + VirusTotal")
-
-# --- MAIN ---
-
-async def main():
-    app_bot = ApplicationBuilder().token(TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_url))
-    app_bot.add_handler(CallbackQueryHandler(button_handler))
-    await app_bot.start()
-    await app_bot.updater.start_webhook(
-        listen="0.0.0.0",
-        port=10000,
-        url_path=TOKEN,
-        webhook_url=f"https://phishcheck.onrender.com/{TOKEN}"
-    )
-    print("PhishCheck bot is up and running.")
-    await app_bot.updater.idle()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    app.run(host="0.0.0.0", port=10000)
