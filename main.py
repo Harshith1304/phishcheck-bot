@@ -136,5 +136,5 @@ if __name__ == "__main__":
     application.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 10000)),
-        webhook_url="https://phishcheckbot.onrender.com/7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY"
+        webhook_url="https://phishcheck-bot-1.onrender.com/7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY"
     )
