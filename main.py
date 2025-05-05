@@ -103,8 +103,7 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Report False Result", url="https://safebrowsing.google.com/safebrowsing/report_phish/")]
     ]
     reply_markup = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text("
-".join(response_msgs), reply_markup=reply_markup)
+    await update.message.reply_text(" ".join(response_msgs), reply_markup=reply_markup)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
