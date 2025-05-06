@@ -124,6 +124,9 @@ async def telegram_webhook():
 @app.route("/")
 def index():
     return "PhishCheck Bot is up."
+@app.route("/uptime", methods=["GET"])
+def uptime():
+    return "OK", 200
 
 # Run the bot
 if __name__ == "__main__":
