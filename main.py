@@ -115,7 +115,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("PhishCheck Bot - Version 2.0\nNow powered by Google Safe Browsing + VirusTotal")
 
 # Telegram webhook route
-@app.route(f"/{TOKEN}", methods=["POST"])
+@app.route(f"/{TOKEN}", methods=['GET','POST'])
 async def telegram_webhook():
     request_data = request.get_json(force=True)
     await application.update_queue.put(Update.de_json(request_data, application.bot))
