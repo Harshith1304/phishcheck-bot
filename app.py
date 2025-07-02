@@ -23,7 +23,7 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-# These are moved outside the __main__ block so Gunicorn loads them correctly.
+# These are moved outside the __main__ block so Uvicorn loads them correctly.
 app = Flask(__name__)
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
@@ -130,10 +130,6 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# --- IMPORTANT: Removed the problematic asyncio.run(application.post_init()) call ---
-# Gunicorn manages the asyncio loop; calling asyncio.run() globally causes conflicts.
-
-
 # --- Flask Routes ---
 # Telegram Webhook Route
 @app.route(f"/{TOKEN}", methods=['POST'])
@@ -160,21 +156,11 @@ def uptime():
 
 # --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
 if __name__ == "__main__":
-    PUBLIC_WEBHOOK_URL = f"https://phishcheck-bot-1.onrender.com/{TOKEN}"
+    # In production (on Render), Uvicorn runs the 'app' instance directly via Procfile.
+    # This block is only for local development testing with Flask's built-in server.
+    # Webhook setting should be done manually via Telegram API after deployment for live bots.
 
-    async def set_initial_webhook_for_local():
-        logging.info(f"Setting webhook for local testing to: {PUBLIC_WEBHOOK_URL}")
-        try:
-            await application.bot.set_webhook(url=PUBLIC_WEBHOOK_URL)
-            logging.info("Webhook set successfully for local testing.")
-        except Exception as e:
-            logging.error(f"Error setting webhook for local testing: {e}")
-
-    # Run the webhook setting once on local startup
-    asyncio.run(set_initial_webhook_for_local())
-
-    # Start the Flask development server
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000)) # Default to 5000 for local Flask dev server
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
-    app.run(host="0.0.0.0", port=port)
-            
+    app.run(host="0.0.0.0", port=port, debug=True) # debug=True for more helpful local errors
+    
