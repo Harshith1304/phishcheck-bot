@@ -11,8 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import asyncio
-from wsgi_asgi_connector import WSGIAsgi # NEW: Import WSGIAsgi for Uvicorn compatibility
+import asyncio # Keep asyncio import as process_update is async
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 # It's crucial to set these in your Render Dashboard's Environment Variables.
@@ -25,11 +24,8 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-# Create the original Flask application instance
-original_app = Flask(__name__)
-
-# NEW: Wrap the Flask app with WSGIAsgi to make it ASGI-compatible for Uvicorn
-app = WSGIAsgi(original_app) # This 'app' is what Uvicorn will run
+# Flask app is initialized directly
+app = Flask(__name__) # Back to 'app' for direct Uvicorn use
 
 # Initialize the python-telegram-bot Application instance
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
@@ -97,7 +93,6 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     flagged = False
 
-    # Call the correctly named function
     gsb_result = check_google_safeBrowse(url)
     if gsb_result:
         response_msgs.append("❌ " + gsb_result)
@@ -117,7 +112,6 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("Recheck", callback_data=url)],
         [InlineKeyboardButton("Bot Info", callback_data="info")],
-        # Corrected URL for consistency, assuming Google Safe Browse API official URL
         [InlineKeyboardButton("Report False Result", url="https://safeBrowse.google.com/safeBrowse/report_phish/")]
     ]
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -129,10 +123,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if data.startswith("http"):
-        # Create a temporary update object with the URL as message text for re-check
         temp_update = Update({'update_id': update.update_id, 'message': query.message, 'callback_query': query})
-        temp_update.message.text = data # Set the message text to the URL for check_url
-        await check_url(temp_update, context) # Pass the modified update and original context
+        temp_update.message.text = data
+        await check_url(temp_update, context)
     elif data == "info":
         await query.edit_message_text("PhishCheck Bot - Version 2.0\nNow powered by Google Safe Browse + VirusTotal")
 
@@ -141,9 +134,9 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# --- Flask Routes (Decorators must use 'original_app' as that's the Flask instance) ---
+# --- Flask Routes (Decorators now use 'app' directly) ---
 # Telegram Webhook Route
-@original_app.route(f"/{TOKEN}", methods=['POST'])
+@app.route(f"/{TOKEN}", methods=['POST']) # Use 'app' directly here
 async def telegram_webhook():
     if request.method == "POST":
         try:
@@ -156,23 +149,23 @@ async def telegram_webhook():
     return "Method Not Allowed", 405
 
 # Root path for general info
-@original_app.route("/")
+@app.route("/") # Use 'app' directly here
 def index():
     return "PhishCheck Bot is up."
 
 # Health Check Route (for UptimeRobot)
-@original_app.route("/uptime", methods=['GET','HEAD'])
+@app.route("/uptime", methods=['GET','HEAD']) # Use 'app' directly here
 def uptime():
     return "OK", 200
 
 # --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
 if __name__ == "__main__":
-    # In production (on Render), Uvicorn runs the 'app' (wrapped original_app) directly via Procfile.
+    # In production (on Render), Uvicorn runs the 'app' directly via Procfile.
     # This block is only for local development testing with Flask's built-in server.
     # Webhook setting (Telegram API call) for live bots should be done manually after deployment.
 
     port = int(os.environ.get("PORT", 5000)) # Default to 5000 for local Flask dev server
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
     # Run the original Flask app directly for local development
-    original_app.run(host="0.0.0.0", port=port, debug=True) # debug=True for more helpful local errors
-        
+    app.run(host="0.0.0.0", port=port, debug=True) # debug=True for more helpful local errors
+    
