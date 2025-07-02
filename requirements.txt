@@ -3,3 +3,4 @@ requests
 Flask[async] # <--- THIS IS THE CHANGE
 gunicorn
 uvicorn
+wsgi-asgi-connector
