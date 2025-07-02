@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import asyncio # New: Import asyncio for running async operations
+import asyncio # Import asyncio for running async operations
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 # It's crucial to set these in your Render Dashboard's Environment Variables
@@ -133,6 +133,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
+
+# FIX: Add an explicit post-initialization for the Application object
+# This ensures it's ready to process updates when Gunicorn starts the Flask app.
+# This should happen *after* handlers are added, but before app.run() or Gunicorn starts listening.
+asyncio.run(application.post_init())
+
 
 # --- Flask Routes ---
 # Telegram Webhook Route (Modified to process update via application object)
