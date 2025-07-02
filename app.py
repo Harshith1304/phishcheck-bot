@@ -11,7 +11,8 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import asyncio # Keep asyncio import as process_update is async
+import asyncio
+from asgiref.wsgi import WsgiToAsgi # NEW: Import WsgiToAsgi for Uvicorn compatibility
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 # It's crucial to set these in your Render Dashboard's Environment Variables.
@@ -24,8 +25,12 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-# Flask app is initialized directly
-app = Flask(__name__) # Back to 'app' for direct Uvicorn use
+# Create the original Flask application instance (this is your actual Flask app)
+original_app = Flask(__name__)
+
+# NEW: Wrap the Flask app with WsgiToAsgi to make it ASGI-compatible for Uvicorn
+# This 'app' variable is what Uvicorn expects to run
+app = WsgiToAsgi(original_app)
 
 # Initialize the python-telegram-bot Application instance
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
@@ -134,9 +139,10 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# --- Flask Routes (Decorators now use 'app' directly) ---
+
+# --- Flask Routes (Decorators must use 'original_app' as that's the Flask instance) ---
 # Telegram Webhook Route
-@app.route(f"/{TOKEN}", methods=['POST']) # Use 'app' directly here
+@original_app.route(f"/{TOKEN}", methods=['POST']) # Decorate original_app, not the wrapped 'app'
 async def telegram_webhook():
     if request.method == "POST":
         try:
@@ -149,23 +155,23 @@ async def telegram_webhook():
     return "Method Not Allowed", 405
 
 # Root path for general info
-@app.route("/") # Use 'app' directly here
+@original_app.route("/") # Decorate original_app
 def index():
     return "PhishCheck Bot is up."
 
 # Health Check Route (for UptimeRobot)
-@app.route("/uptime", methods=['GET','HEAD']) # Use 'app' directly here
+@original_app.route("/uptime", methods=['GET','HEAD']) # Decorate original_app
 def uptime():
     return "OK", 200
 
 # --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
 if __name__ == "__main__":
-    # In production (on Render), Uvicorn runs the 'app' directly via Procfile.
+    # In production (on Render), Uvicorn runs the 'app' (wrapped original_app) via Procfile.
     # This block is only for local development testing with Flask's built-in server.
     # Webhook setting (Telegram API call) for live bots should be done manually after deployment.
 
     port = int(os.environ.get("PORT", 5000)) # Default to 5000 for local Flask dev server
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
-    # Run the original Flask app directly for local development
-    app.run(host="0.0.0.0", port=port, debug=True) # debug=True for more helpful local errors
-    
+    # When running locally, you run the original_app directly as Flask's dev server is WSGI
+    original_app.run(host="0.0.0.0", port=port, debug=True) # debug=True for more helpful local errors
+                              
