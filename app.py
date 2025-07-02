@@ -11,8 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import asyncio
-from asgiref.wsgi import WsgiToAsgi # Import WsgiToAsgi for Uvicorn compatibility
+import asyncio # Keep asyncio import as process_update is async
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 TOKEN = os.environ.get("TOKEN", "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY")
@@ -22,9 +21,10 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-original_app = Flask(__name__)
-app = WsgiToAsgi(original_app) # This 'app' is what Uvicorn will run
+# Flask app is initialized directly
+app = Flask(__name__) # Back to 'app' for direct Uvicorn use
 
+# Initialize the python-telegram-bot Application instance
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
 
@@ -132,15 +132,15 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_ur
 application.add_handler(CallbackQueryHandler(button_handler))
 
 # NEW: Use Flask's before_serving hook to initialize the PTB Application
-@original_app.before_serving
+# This is back, hoping Flask 2.3.3 supports it correctly.
+@app.before_serving
 async def initialize_ptb_application():
     logging.info("Initializing python-telegram-bot Application (before_serving).")
     await application.initialize()
-    # If you also need to start it (e.g., for background tasks not just processing updates)
     # await application.start() # Uncomment if you plan to run background jobs with PTB
 
-# --- Flask Routes (Decorators must use 'original_app') ---
-@original_app.route(f"/{TOKEN}", methods=['POST'])
+# --- Flask Routes (Decorators now use 'app' directly) ---
+@app.route(f"/{TOKEN}", methods=['POST'])
 async def telegram_webhook():
     if request.method == "POST":
         try:
@@ -152,25 +152,23 @@ async def telegram_webhook():
             return "error", 500
     return "Method Not Allowed", 405
 
-@original_app.route("/")
+@app.route("/")
 def index():
     return "PhishCheck Bot is up."
 
-@original_app.route("/uptime", methods=['GET','HEAD'])
+@app.route("/uptime", methods=['GET','HEAD'])
 def uptime():
     return "OK", 200
 
 # --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
 if __name__ == "__main__":
-    # For local development, this needs to initialize the app and then run Flask.
-    # The @before_serving hook might not trigger the same way with Flask's dev server depending on version.
-    # For robust local testing, you would usually run application.run_polling() or use ngrok with webhook.
-    # For simplicity, we manually initialize the app for local debugging if not run by uvicorn.
+    # When running locally, app.run() starts a WSGI dev server.
+    # For local testing, you might still want to manually initialize the PTB Application.
     logging.info("Running locally. Initializing PTB Application for local debugging.")
     asyncio.run(application.initialize()) # Manual initialize for local run
     # asyncio.run(application.start()) # Manual start for local run if needed for background
 
     port = int(os.environ.get("PORT", 5000))
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
-    original_app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=True)
     
