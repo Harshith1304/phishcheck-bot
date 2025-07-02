@@ -1,5 +1,5 @@
 python-telegram-bot[webhooks]==20.6
 requests
-Flask[async]
+Flask==2.3.3 # <--- SPECIFIC VERSION HERE
 gunicorn
 uvicorn
