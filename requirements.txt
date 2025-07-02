@@ -1,6 +1,5 @@
 python-telegram-bot[webhooks]==20.6
 requests
-Flask[async] # <--- THIS IS THE CHANGE
+Flask[async]
 gunicorn
 uvicorn
-wsgi-asgi-connector
