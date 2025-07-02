@@ -3,3 +3,4 @@ requests
 Flask # <--- no need of SPECIFIC VERSION HERE
 gunicorn
 uvicorn
+asgiref
