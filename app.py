@@ -12,6 +12,7 @@ from telegram.ext import (
     filters
 )
 import asyncio
+from asgiref.wsgi import WsgiToAsgi # CRITICAL: Import WsgiToAsgi for Uvicorn compatibility
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 TOKEN = os.environ.get("TOKEN", "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY")
@@ -21,11 +22,16 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-app = Flask(__name__) # Flask app initialized directly
+# Create the original Flask application instance (this is your actual Flask app)
+original_app = Flask(__name__)
+
+# CRITICAL FIX: Wrap the Flask app with WsgiToAsgi to make it ASGI-compatible for Uvicorn
+# This 'app' variable is what Uvicorn will run
+app = WsgiToAsgi(original_app)
+
+# Initialize the python-telegram-bot Application instance
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
-# NEW: Flag to ensure PTB Application initialization happens only once
-bot_initialized = False
 
 # --- Helper functions ---
 def check_google_safeBrowse(url):
@@ -130,12 +136,13 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# --- Flask Routes ---
-@app.route(f"/{TOKEN}", methods=['POST'])
+
+# --- Flask Routes (Decorators must use 'original_app' as that's the Flask instance) ---
+@original_app.route(f"/{TOKEN}", methods=['POST']) # Decorate original_app, not the wrapped 'app'
 async def telegram_webhook():
     global bot_initialized # Declare global to modify the flag
 
-    # NEW: Initialize PTB Application on the first request, if not already
+    # Initialize PTB Application on the first request, if not already
     if not bot_initialized:
         logging.info("First webhook received. Initializing python-telegram-bot Application.")
         try:
@@ -157,23 +164,23 @@ async def telegram_webhook():
             return "error", 500
     return "Method Not Allowed", 405
 
-@app.route("/")
+@original_app.route("/") # Decorate original_app
 def index():
     return "PhishCheck Bot is up."
 
-@app.route("/uptime", methods=['GET','HEAD'])
+@original_app.route("/uptime", methods=['GET','HEAD']) # Decorate original_app
 def uptime():
     return "OK", 200
 
 # --- Local Development/Testing Setup ---
 if __name__ == "__main__":
-    # When running locally, app.run() starts a WSGI dev server.
-    # We still need to manually initialize for local testing here.
+    # When running locally, original_app.run() starts a WSGI dev server.
+    # For local testing, you might still want to manually initialize the PTB Application.
     logging.info("Running locally. Initializing PTB Application for local debugging.")
     asyncio.run(application.initialize()) # Manual initialize for local run
     asyncio.run(application.start()) # Manual start for local run
 
     port = int(os.environ.get("PORT", 5000))
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    original_app.run(host="0.0.0.0", port=port, debug=True)
     
