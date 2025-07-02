@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import asyncio # Import asyncio for running async operations
+import asyncio # Keep asyncio import as process_update is async
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 # It's crucial to set these in your Render Dashboard's Environment Variables
@@ -28,7 +28,6 @@ app = Flask(__name__)
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
 # --- Helper functions ---
-# FIX: Renamed check_google_safeBrowse to check_google_safeBrowse for consistency
 def check_google_safeBrowse(url):
     endpoint = "https://safeBrowse.googleapis.com/v4/threatMatches:find"
     payload = {
@@ -90,7 +89,6 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     flagged = False
 
-    # FIX: Call the correctly renamed function
     gsb_result = check_google_safeBrowse(url)
     if gsb_result:
         response_msgs.append("❌ " + gsb_result)
@@ -110,7 +108,6 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("Recheck", callback_data=url)],
         [InlineKeyboardButton("Bot Info", callback_data="info")],
-        # FIX: Corrected URL for consistency, assuming Google Safe Browse API
         [InlineKeyboardButton("Report False Result", url="https://safeBrowse.google.com/safeBrowse/report_phish/")]
     ]
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -122,10 +119,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if data.startswith("http"):
-        # Create a temporary update object with the URL as message text for re-check
         temp_update = Update({'update_id': update.update_id, 'message': query.message, 'callback_query': query})
-        temp_update.message.text = data # Set the message text to the URL for check_url
-        await check_url(temp_update, context) # Pass the modified update and original context
+        temp_update.message.text = data
+        await check_url(temp_update, context)
     elif data == "info":
         await query.edit_message_text("PhishCheck Bot - Version 2.0\nNow powered by Google Safe Browse + VirusTotal")
 
@@ -134,27 +130,23 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# FIX: Add an explicit post-initialization for the Application object
-# This ensures it's ready to process updates when Gunicorn starts the Flask app.
-# This should happen *after* handlers are added, but before app.run() or Gunicorn starts listening.
-asyncio.run(application.post_init())
+# --- IMPORTANT: Removed the problematic asyncio.run(application.post_init()) call ---
+# Gunicorn manages the asyncio loop; calling asyncio.run() globally causes conflicts.
 
 
 # --- Flask Routes ---
-# Telegram Webhook Route (Modified to process update via application object)
+# Telegram Webhook Route
 @app.route(f"/{TOKEN}", methods=['POST'])
 async def telegram_webhook():
     if request.method == "POST":
         try:
-            # Get the update from Telegram
             update = Update.de_json(request.get_json(force=True), application.bot)
-            # Process the update using the globally initialized application object
             await application.process_update(update)
             return "ok"
         except Exception as e:
             logging.error(f"Error processing Telegram webhook update: {e}")
-            return "error", 500 # Return a 500 error if processing fails
-    return "Method Not Allowed", 405 # For other methods if they somehow hit this endpoint
+            return "error", 500
+    return "Method Not Allowed", 405
 
 # Root path for general info
 @app.route("/")
@@ -168,14 +160,7 @@ def uptime():
 
 # --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
 if __name__ == "__main__":
-    # In production (on Render), Gunicorn runs the 'app' instance directly.
-    # This block is only for local development testing with Flask's built-in server.
-
-    # It's a good idea to set the webhook once on startup for local testing.
-    # Replace with your actual Render URL if testing on Render's deployed webhook.
-    # If running locally with ngrok, this should be your ngrok URL.
-    # Make sure this matches the URL you set manually via the Telegram API for actual deployments.
-    PUBLIC_WEBHOOK_URL = f"https://phishcheck-bot-1.onrender.com/{TOKEN}" # Use your Render URL
+    PUBLIC_WEBHOOK_URL = f"https://phishcheck-bot-1.onrender.com/{TOKEN}"
 
     async def set_initial_webhook_for_local():
         logging.info(f"Setting webhook for local testing to: {PUBLIC_WEBHOOK_URL}")
@@ -189,7 +174,7 @@ if __name__ == "__main__":
     asyncio.run(set_initial_webhook_for_local())
 
     # Start the Flask development server
-    port = int(os.environ.get("PORT", 5000)) # Default to 5000 for local Flask dev server
+    port = int(os.environ.get("PORT", 5000))
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port)
             
