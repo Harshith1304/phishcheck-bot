@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import asyncio # Keep asyncio import as process_update is async
+import asyncio
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 TOKEN = os.environ.get("TOKEN", "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY")
@@ -21,12 +21,11 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-# Flask app is initialized directly
-app = Flask(__name__) # Back to 'app' for direct Uvicorn use
-
-# Initialize the python-telegram-bot Application instance
+app = Flask(__name__) # Flask app initialized directly
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
+# NEW: Flag to ensure PTB Application initialization happens only once
+bot_initialized = False
 
 # --- Helper functions ---
 def check_google_safeBrowse(url):
@@ -126,29 +125,35 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "info":
         await query.edit_message_text("PhishCheck Bot - Version 2.0\nNow powered by Google Safe Browse + VirusTotal")
 
-# --- Add Handlers to the Application Object (Moved outside __main__ block) ---
+# --- Add Handlers to the Application Object ---
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# NEW: Use Flask's before_serving hook to initialize the PTB Application
-# This is back, hoping Flask 2.3.3 supports it correctly.
-@app.before_serving
-async def initialize_ptb_application():
-    logging.info("Initializing python-telegram-bot Application (before_serving).")
-    await application.initialize()
-    # await application.start() # Uncomment if you plan to run background jobs with PTB
-
-# --- Flask Routes (Decorators now use 'app' directly) ---
+# --- Flask Routes ---
 @app.route(f"/{TOKEN}", methods=['POST'])
 async def telegram_webhook():
+    global bot_initialized # Declare global to modify the flag
+
+    # NEW: Initialize PTB Application on the first request, if not already
+    if not bot_initialized:
+        logging.info("First webhook received. Initializing python-telegram-bot Application.")
+        try:
+            await application.initialize()
+            await application.start() # Start it as well to be fully ready
+            bot_initialized = True
+            logging.info("PTB Application initialized and started successfully.")
+        except Exception as e:
+            logging.error(f"FATAL ERROR during first-request PTB initialization: {e}")
+            return "error", 500 # Return error if initialization fails
+
     if request.method == "POST":
         try:
             update = Update.de_json(request.get_json(force=True), application.bot)
             await application.process_update(update)
             return "ok"
         except Exception as e:
-            logging.error(f"Error processing Telegram webhook update: {e}")
+            logging.error(f"Error processing Telegram webhook update (after init): {e}")
             return "error", 500
     return "Method Not Allowed", 405
 
@@ -160,13 +165,13 @@ def index():
 def uptime():
     return "OK", 200
 
-# --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
+# --- Local Development/Testing Setup ---
 if __name__ == "__main__":
     # When running locally, app.run() starts a WSGI dev server.
-    # For local testing, you might still want to manually initialize the PTB Application.
+    # We still need to manually initialize for local testing here.
     logging.info("Running locally. Initializing PTB Application for local debugging.")
     asyncio.run(application.initialize()) # Manual initialize for local run
-    # asyncio.run(application.start()) # Manual start for local run if needed for background
+    asyncio.run(application.start()) # Manual start for local run
 
     port = int(os.environ.get("PORT", 5000))
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
