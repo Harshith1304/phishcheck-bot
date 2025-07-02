@@ -12,12 +12,9 @@ from telegram.ext import (
     filters
 )
 import asyncio
-from asgiref.wsgi import WsgiToAsgi # NEW: Import WsgiToAsgi for Uvicorn compatibility
+from asgiref.wsgi import WsgiToAsgi # Import WsgiToAsgi for Uvicorn compatibility
 
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
-# It's crucial to set these in your Render Dashboard's Environment Variables.
-# The second value in os.environ.get is a fallback for local testing ONLY.
-# For production, Render will provide the environment variables.
 TOKEN = os.environ.get("TOKEN", "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY")
 GKEY = os.environ.get("GKEY", "AIzaSyBNAp4clDaP7ZJWBpPU1KNozkb5d3yzm38")
 VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b8476030179ff64bb5cf59e2464f0c5")
@@ -25,14 +22,9 @@ VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b847
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- Initialize Flask App and python-telegram-bot Application GLOBALLY ---
-# Create the original Flask application instance (this is your actual Flask app)
 original_app = Flask(__name__)
+app = WsgiToAsgi(original_app) # This 'app' is what Uvicorn will run
 
-# NEW: Wrap the Flask app with WsgiToAsgi to make it ASGI-compatible for Uvicorn
-# This 'app' variable is what Uvicorn expects to run
-app = WsgiToAsgi(original_app)
-
-# Initialize the python-telegram-bot Application instance
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
 
@@ -139,10 +131,16 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
 application.add_handler(CallbackQueryHandler(button_handler))
 
+# NEW: Use Flask's before_serving hook to initialize the PTB Application
+@original_app.before_serving
+async def initialize_ptb_application():
+    logging.info("Initializing python-telegram-bot Application (before_serving).")
+    await application.initialize()
+    # If you also need to start it (e.g., for background tasks not just processing updates)
+    # await application.start() # Uncomment if you plan to run background jobs with PTB
 
-# --- Flask Routes (Decorators must use 'original_app' as that's the Flask instance) ---
-# Telegram Webhook Route
-@original_app.route(f"/{TOKEN}", methods=['POST']) # Decorate original_app, not the wrapped 'app'
+# --- Flask Routes (Decorators must use 'original_app') ---
+@original_app.route(f"/{TOKEN}", methods=['POST'])
 async def telegram_webhook():
     if request.method == "POST":
         try:
@@ -154,24 +152,25 @@ async def telegram_webhook():
             return "error", 500
     return "Method Not Allowed", 405
 
-# Root path for general info
-@original_app.route("/") # Decorate original_app
+@original_app.route("/")
 def index():
     return "PhishCheck Bot is up."
 
-# Health Check Route (for UptimeRobot)
-@original_app.route("/uptime", methods=['GET','HEAD']) # Decorate original_app
+@original_app.route("/uptime", methods=['GET','HEAD'])
 def uptime():
     return "OK", 200
 
 # --- Local Development/Testing Setup (This block only runs when script is executed directly) ---
 if __name__ == "__main__":
-    # In production (on Render), Uvicorn runs the 'app' (wrapped original_app) via Procfile.
-    # This block is only for local development testing with Flask's built-in server.
-    # Webhook setting (Telegram API call) for live bots should be done manually after deployment.
+    # For local development, this needs to initialize the app and then run Flask.
+    # The @before_serving hook might not trigger the same way with Flask's dev server depending on version.
+    # For robust local testing, you would usually run application.run_polling() or use ngrok with webhook.
+    # For simplicity, we manually initialize the app for local debugging if not run by uvicorn.
+    logging.info("Running locally. Initializing PTB Application for local debugging.")
+    asyncio.run(application.initialize()) # Manual initialize for local run
+    # asyncio.run(application.start()) # Manual start for local run if needed for background
 
-    port = int(os.environ.get("PORT", 5000)) # Default to 5000 for local Flask dev server
+    port = int(os.environ.get("PORT", 5000))
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
-    # When running locally, you run the original_app directly as Flask's dev server is WSGI
-    original_app.run(host="0.0.0.0", port=port, debug=True) # debug=True for more helpful local errors
-                              
+    original_app.run(host="0.0.0.0", port=port, debug=True)
+    
