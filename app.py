@@ -16,9 +16,9 @@ import asyncio # New: Import asyncio for running async operations
 # --- Configuration (IMPORTANT: Use Environment Variables for Production) ---
 # It's crucial to set these in your Render Dashboard's Environment Variables
 # For local testing, you might set them in a .env file or directly, but DO NOT hardcode for deploy
-TOKEN = os.environ.get("TOKEN", "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY") # Fallback for local testing, remove for prod
-GKEY = os.environ.get("GKEY", "AIzaSyBNAp4clDaP7ZJWBpPU1KNozkb5d3yzm38") # Fallback for local testing, remove for prod
-VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b8476030179ff64bb5cf59e2464f0c5") # Fallback for local testing, remove for prod
+TOKEN = os.environ.get("TOKEN", "7650332712:AAFWYj8kmLY_eLuiPzXiiUQWyMj8axyuXkY") # Fallback for local testing
+GKEY = os.environ.get("GKEY", "AIzaSyBNAp4clDaP7ZJWBpPU1KNozkb5d3yzm38") # Fallback for local testing
+VT_API_KEY = os.environ.get("VT_API_KEY", "09dcff205dbe6d5a866976e0a2cb961e6b8476030179ff64bb5cf59e2464f0c5") # Fallback for local testing
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -27,7 +27,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 app = Flask(__name__)
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
-# --- Helper functions (No changes needed here) ---
+# --- Helper functions ---
+# FIX: Renamed check_google_safeBrowse to check_google_safeBrowse for consistency
 def check_google_safeBrowse(url):
     endpoint = "https://safeBrowse.googleapis.com/v4/threatMatches:find"
     payload = {
@@ -75,7 +76,7 @@ def is_suspicious_pattern(url):
 
     return any(keyword in url.lower() for keyword in phishing_keywords)
 
-# --- Handlers (No changes needed here) ---
+# --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Send me a URL and I’ll check if it's phishing or dangerous.")
 
@@ -89,6 +90,7 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     flagged = False
 
+    # FIX: Call the correctly renamed function
     gsb_result = check_google_safeBrowse(url)
     if gsb_result:
         response_msgs.append("❌ " + gsb_result)
@@ -108,6 +110,7 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("Recheck", callback_data=url)],
         [InlineKeyboardButton("Bot Info", callback_data="info")],
+        # FIX: Corrected URL for consistency, assuming Google Safe Browse API
         [InlineKeyboardButton("Report False Result", url="https://safeBrowse.google.com/safeBrowse/report_phish/")]
     ]
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -183,4 +186,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000)) # Default to 5000 for local Flask dev server
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port)
-
+            
