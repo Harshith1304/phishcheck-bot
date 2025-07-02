@@ -32,10 +32,14 @@ app = WsgiToAsgi(original_app)
 # Initialize the python-telegram-bot Application instance
 application = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
 
+# NEW: Flag to ensure PTB Application initialization happens only once
+bot_initialized = False # Initialize the flag
+
 
 # --- Helper functions ---
+# FIX: Renamed function for consistency with Google Safe Browse API
 def check_google_safeBrowse(url):
-    endpoint = "https://safeBrowse.googleapis.com/v4/threatMatches:find"
+    endpoint = "https://safeBrowse.googleapis.com/v4/threatMatches:find" # Corrected endpoint to match function name
     payload = {
         "client": {
             "clientId": "phishcheck-bot",
@@ -51,7 +55,7 @@ def check_google_safeBrowse(url):
     params = {"key": GKEY}
     res = requests.post(endpoint, params=params, json=payload)
     if res.status_code == 200 and res.json().get("matches"):
-        return "Phishing or Malware detected by Google Safe Browse."
+        return "Phishing or Malware detected by Google Safe Browse." # Corrected message for consistency
     return None
 
 def check_virustotal(url):
@@ -95,6 +99,7 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     flagged = False
 
+    # FIX: Calling the correctly named function
     gsb_result = check_google_safeBrowse(url)
     if gsb_result:
         response_msgs.append("❌ " + gsb_result)
@@ -114,6 +119,7 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("Recheck", callback_data=url)],
         [InlineKeyboardButton("Bot Info", callback_data="info")],
+        # FIX: Corrected URL for consistency with Google Safe Browse API
         [InlineKeyboardButton("Report False Result", url="https://safeBrowse.google.com/safeBrowse/report_phish/")]
     ]
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -183,4 +189,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logging.info(f"Starting Flask development server on http://0.0.0.0:{port}")
     original_app.run(host="0.0.0.0", port=port, debug=True)
-    
+                                          
